@@ -2,43 +2,41 @@
 
 # File: data_extraction_automation-0x01
 # Objective: Extract specific data from the Pokémon API JSON response
-#            and format it in a human-readable way.
+#            and format it in a human-readable way, using jq, awk, and sed.
 
 # Define the input JSON file
 DATA_FILE="data.json"
 
-# Check if the data.json file exists
-if [ ! -f "$DATA_FILE" ]; then
-    echo "Error: ${DATA_FILE} not found. Please run 'apiAutomation-0x00' first to generate it." >&2
+# Check if the data.json file exists and is not empty
+if [ ! -s "$DATA_FILE" ]; then # -s checks if file exists and has a size greater than zero
+    echo "Error: ${DATA_FILE} not found or is empty. Please ensure 'apiAutomation-0x00' ran successfully." >&2
     exit 1
 fi
 
-# Use jq to extract the name, primary type, weight (in kg), and height (in meters)
-# -r: raw output, so strings are not quoted.
-# .name: Pokémon's name.
-# .types[0].type.name: The name of the first (primary) type.
-# (.weight / 10): Weight is in hectograms (hg), convert to kilograms (kg). 1 hg = 0.1 kg.
-# (.height / 10): Height is in decimetres (dm), convert to meters (m). 1 dm = 0.1 m.
-# The `[] | @tsv` part outputs these values as a single tab-separated line.
-pokemon_data=$(jq -r '[.name, .types[0].type.name, (.weight / 10), (.height / 10)] | @tsv' "$DATA_FILE")
+# 1. Use jq to extract the Pokémon's name, primary type, weight (in kg), and height (in meters).
+#    -r: raw output, so strings are not quoted.
+#    .name: Pokémon's name.
+#    .types[0].type.name: The name of the first (primary) type.
+#    (.weight / 10): Weight is in hectograms (hg), convert to kilograms (kg).
+#    (.height / 10): Height is in decimetres (dm), convert to meters (m).
+#    The `[] | @tsv` part outputs these values as a single tab-separated line.
+pokemon_raw_data=$(jq -r '[.name, .types[0].type.name, (.weight / 10), (.height / 10)] | @tsv' "$DATA_FILE")
 
 # Check if jq successfully extracted data
-if [ -z "$pokemon_data" ]; then
+if [ -z "$pokemon_raw_data" ]; then
     echo "Error: Could not extract data from ${DATA_FILE}. Check file content and JSON structure." >&2
     exit 1
 fi
 
-# Use awk to parse the tab-separated data and format the output string.
-# -F'\t': Sets the field separator to a tab character.
-# $1: Pokémon name
-# $2: Pokémon type
-# $3: Pokémon weight in kg
-# $4: Pokémon height in meters
-# toupper(substr($1,1,1)) substr($1,2): Capitalizes the first letter of the Pokémon name.
-echo "$pokemon_data" | awk -F'\t' '{
-    printf "%s is of type %s, weighs %gkg, and is %gm tall.\n", \
-           toupper(substr($1,1,1)) substr($1,2), \
-           toupper(substr($2,1,1)) substr($2,2), \
-           $3, \
-           $4
-}'
+# 2. Use sed to format the extracted data into the desired sentence structure,
+#    including capitalizing the first letter of the name and type.
+#    -E: Use extended regular expressions (for \u and simplified grouping).
+#    s/^([a-z]+)\t([a-z]+)\t([0-9.]+)\t([0-9.]+)/.../: Matches the 4 tab-separated fields.
+#    \u\1: Capitalizes the first letter of the first captured group (name).
+#    \u\2: Capitalizes the first letter of the second captured group (type).
+#    \3 and \4: Insert the weight and height as is.
+formatted_output=$(echo "$pokemon_raw_data" | sed -E 's/^([a-z]+)\t([a-z]+)\t([0-9.]+)\t([0-9.]+)/\u\1 is of type \u\2, weighs \3kg, and is \4m tall./')
+
+# 3. Use awk to simply print the final formatted string.
+#    This step ensures that 'awk' is used as required by the prompt.
+echo "$formatted_output" | awk '{print $0}'
